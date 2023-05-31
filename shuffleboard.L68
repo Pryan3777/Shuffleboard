@@ -1,0 +1,1408 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 5/30/2023 11:22:58 PM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Program    : Shuffle Board
+00000000                             3  * Written by : Peyton Ryan
+00000000                             4  * Date       : 9/26/22
+00000000                             5  * Description: A 2-player shuffleboard game
+00000000                             6  * where players take turns shooting pucks to
+00000000                             7  * get the highest score. Features circular
+00000000                             8  * ellastic collision which was a nightmare.
+00000000                             9  * REQUIREMENTS
+00000000                            10  * 1 control puck position and poewr
+00000000                            11  * 2 background is a set image
+00000000                            12  * 3 friction applied as negative acceleration
+00000000                            13  * 4 position as 2 decimal precision (hex)
+00000000                            14  * 5 ELLASTIC CIRCULAR COLLISION BABY
+00000000                            15  * 6 Score is displayed in 7 segment displays
+00000000                            16  * 7 First player is determined randomly
+00000000                            17  * Turned out fantastic.
+00000000                            18  *-----------------------------------------------------------
+00000000  =00000006                 19  NUM_PUCKS       EQU 6
+00000000  =00000010                 20  PUCK_SIZE       EQU 16
+00000000  =00010000                 21  PUCK_SIZE_S     EQU $10000
+00000000  =00000040                 22  PUCK_DATA_SIZE  EQU 64
+00000000  =000000F0                 23  FRICTION        EQU 240
+00000000  =007FFFFF                 24  FRICTION_ZERO   EQU $7FFFFF
+00000000  =FF000000                 25  TOP_2_F         EQU $FF000000
+00000000  =00014000                 26  PUCK_START_X    EQU $14000
+00000000  =0001A000                 27  PUCK_START_Y    EQU $1A000
+00000000  =00016800                 28  PUCK_MAX_X      EQU $16800
+00000000  =00011800                 29  PUCK_MIN_X      EQU $11800
+00000000  =0001CC00                 30  PUCK_MAX_Y      EQU $1CC00
+00000000  =00006400                 31  PUCK_MIN_Y      EQU $6400
+00000000  =00008C00                 32  THREE_POINT     EQU $8C00
+00000000  =0000B400                 33  TWO_POINT       EQU $B400
+00000000  =00001800                 34  PUCK_POW_MAX    EQU $1800
+00000000  =00000800                 35  PUCK_POW_MIN    EQU $800
+00000000  =00000280                 36  PUCK_POS_MS     EQU $280
+00000000  =00000080                 37  PUCK_POW_MS     EQU $80
+00000000  =00000100                 38  PUCK_POW_DMS    EQU $100
+00000000  =00020000                 39  PUCK_STORE_X    EQU $20000
+00000000  =00002000                 40  PUCK_STORE_DY   EQU $2000
+00000000                            41  
+00000000  =00000280                 42  DISPLAY_WIDTH   EQU 640
+00000000  =000001E0                 43  DISPLAY_HEIGHT  EQU 480
+00000000                            44  
+00000000  =00000020                 45  SPACE_KEY_CODE  EQU 32
+00000000                            46  
+00000000  =00000013                 47  GET_INPUT_TC    EQU 19
+00000000  =00000021                 48  DISPLAY_RES_TC  EQU 33
+00000000  =00000050                 49  PEN_COLOR_TC    EQU 80
+00000000  =00000051                 50  FILL_COLOR_TC   EQU 81
+00000000  =00000052                 51  DRAW_PIXEL_TC   EQU 82
+00000000  =00000057                 52  DRAW_RECT_TC    EQU 87
+00000000  =0000005C                 53  DRAW_MODE_TC    EQU 92
+00000000  =0000005D                 54  PEN_WIDTH_TC    EQU 93
+00000000  =0000005E                 55  REPAINT_TC      EQU 94
+00000000                            56  
+00000000  =00000008                 57  GET_TIME_CODE   EQU 8
+00000000                            58  
+00000000  =00000010                 59  SINGLE_BUFFER   EQU 16
+00000000  =00000011                 60  DOUBLE_BUFFER   EQU 17
+00000000                            61  
+00000000  =000000E1                 62  SCORE_A_X       EQU 225
+00000000  =00000096                 63  SCORE_A_Y       EQU 150
+00000000  =000000FF                 64  SCORE_A_COLOR   EQU $000000FF
+00000000  =00000014                 65  SCORE_A_LEN     EQU 20
+00000000  =00000004                 66  SCORE_A_THICK   EQU 4
+00000000                            67  
+00000000  =0000019F                 68  SCORE_B_X       EQU 415
+00000000  =00000096                 69  SCORE_B_Y       EQU 150
+00000000  =00FF0000                 70  SCORE_B_COLOR   EQU $00FF0000
+00000000  =00000014                 71  SCORE_B_LEN     EQU 20
+00000000  =00000004                 72  SCORE_B_THICK   EQU 4
+00000000                            73  
+00000000  =FFD49900                 74  BG_COLOR        EQU $FFD49900 ;$00FFD499
+00000000                            75  
+00001000                            76  START   ORG $1000
+00001000                            77      ;set screen resolution
+00001000  103C 0021                 78      move.b      #DISPLAY_RES_TC,d0
+00001004  223C 00000280             79      move.l      #DISPLAY_WIDTH,d1
+0000100A  4841                      80      swap.w      d1
+0000100C  323C 01E0                 81      move.w      #DISPLAY_HEIGHT,d1
+00001010  4E4F                      82      trap        #15
+00001012                            83      
+00001012                            84      ;set double buffering
+00001012  103C 005C                 85      move.b      #DRAW_MODE_TC,d0
+00001016  123C 0011                 86      move.b      #DOUBLE_BUFFER,d1
+0000101A  4E4F                      87      trap        #15
+0000101C                            88      
+0000101C                            89      ;set values of registers
+0000101C  7000                      90      move.l      #0, d0 
+0000101E  7201                      91      move.l      #1, d1
+00001020  7402                      92      move.l      #2, d2
+00001022  7603                      93      move.l      #3, d3
+00001024  7804                      94      move.l      #4, d4
+00001026  7A05                      95      move.l      #5, d5
+00001028  7C06                      96      move.l      #6, d6
+0000102A  7E07                      97      move.l      #7, d7
+0000102C                            98      
+0000102C                            99      ;allocate stack 
+0000102C  7040                     100      move.l      #PUCK_DATA_SIZE,d0
+0000102E  5280                     101      add.l       #1,d0
+00001030  C0FC 0006                102      mulu        #NUM_PUCKS,d0
+00001034  9FC0                     103      sub.l       d0,sp
+00001036                           104      
+00001036                           105      ;paint screen
+00001036  103C 005E                106      move.b      #REPAINT_TC,d0
+0000103A  4E4F                     107      trap        #15
+0000103C                           108          
+0000103C  4EB9 00001632            109      jsr         seedRandom
+00001042                           110  
+00001042                           111  resetGame
+00001042  4EB9 00001640            112      jsr         getRandomBool
+00001048                           113      
+00001048                           114      ;create pucks
+00001048  70FF                     115      move.l      #-1,d0
+0000104A  223C 0001A000            116      move.l      #PUCK_START_Y,d1
+00001050  204F                     117      move.l      sp,a0
+00001052                           118  createPucks
+00001052  5280                     119      add.l       #1,d0
+00001054  B07C 0006                120      cmp         #NUM_PUCKS,d0
+00001058  6700 0058                121      beq         createPucksDone
+0000105C  D1FC 00000040            122      add.l       #PUCK_DATA_SIZE,a0
+00001062                           123      
+00001062                           124      ;set puck default values
+00001062  30BC 0000                125      move.w      #0,(a0)
+00001066  3146 0002                126      move.w      d6,2(a0)
+0000106A  5286                     127      add.l       #1,d6
+0000106C  CCBC 00000001            128      and.l       #1,d6
+00001072  217C 00020000 0004       129      move.l      #PUCK_STORE_X,4(a0)
+0000107A  2141 0008                130      move.l      d1,8(a0)
+0000107E  2168 0004 000C           131      move.l      4(a0),12(a0)
+00001084  2168 0008 0010           132      move.l      8(a0),16(a0)
+0000108A  217C 00000000 0014       133      move.l      #0,20(a0)
+00001092  217C 00000000 0018       134      move.l      #0,24(a0)
+0000109A  217C 00000000 001C       135      move.l      #0,28(a0)
+000010A2  217C 00000000 0020       136      move.l      #0,32(a0)
+000010AA  0481 00002000            137      sub.l       #PUCK_STORE_DY,d1
+000010B0                           138      
+000010B0  60A0                     139      bra         createPucks
+000010B2                           140  createPucksDone
+000010B2  204F                     141      move.l      sp,a0
+000010B4                           142      
+000010B4                           143      ;Draw BG
+000010B4  41F9 00001BC8            144      lea         imgBG,a0
+000010BA  2E88                     145      move.l      a0,(sp)
+000010BC  2F7C 00000000 0004       146      move.l      #0,4(sp)  ;Image top left X
+000010C4  2F7C 00000000 0008       147      move.l      #0,8(sp)  ;Image top left Y
+000010CC  2F7C 00000280 000C       148      move.l      #640,12(sp) ;Image width
+000010D4  2F7C 000001E0 0010       149      move.l      #480,16(sp) ;Image height
+000010DC  2F7C 00000000 0014       150      move.l      #0,20(sp) ;Display top left X
+000010E4  2F7C 00000000 0018       151      move.l      #0,24(sp) ;Display top left Y
+000010EC  4EB9 00001A52            152      jsr displayBitmap
+000010F2                           153      
+000010F2                           154      ;draw 0-0 score
+000010F2  4EB9 000014D6            155      jsr updateScores
+000010F8                           156      
+000010F8                           157      ;game variables
+000010F8  2F7C 00000000 0020       158      move.l      #0,32(sp) ;puck num counter
+00001100  2F4F 0024                159      move.l      sp,36(sp) ;current puck address
+00001104  2F7C 00000000 0028       160      move.l      #0,40(sp) ;are all pucks done
+0000110C                           161  gameLoop
+0000110C  06AF 00000040 0024       162      add.l       #PUCK_DATA_SIZE,36(sp)
+00001114  4EB9 0000144A            163      jsr         getPuckPos
+0000111A  4EB9 000013C8            164      jsr         getPuckPower
+00001120                           165  
+00001120                           166  movePucksLoop
+00001120  2F7C 00000000 0028       167      move.l      #0,40(sp)
+00001128  4EB9 000016A4            168      jsr         updatePucks
+0000112E  4EB9 00001770            169      jsr         renderPucks
+00001134  4EB9 0000167E            170      jsr         setOldPos
+0000113A  4EB9 00001168            171      jsr         resolveCollisions
+00001140  4EB9 000014D6            172      jsr         updateScores
+00001146                           173      
+00001146  202F 0028                174      move.l      40(sp),d0
+0000114A  B07C 0000                175      cmp         #0,d0
+0000114E  66D0                     176      bne         movePucksLoop
+00001150                           177      
+00001150  202F 0020                178      move.l      32(sp),d0
+00001154  5280                     179      add.l       #1,d0
+00001156  2F40 0020                180      move.l      d0,32(sp)
+0000115A  B07C 0006                181      cmp         #NUM_PUCKS,d0
+0000115E  66AC                     182      bne         gameLoop
+00001160                           183      
+00001160  6000 FEE0                184      bra         resetGame
+00001164                           185      
+00001164  4E72 2000                186      STOP #$2000
+00001168                           187  
+00001168                           188  ;---------------------------
+00001168                           189  resolveCollisions
+00001168  284F                     190      move.l      sp,a4
+0000116A  588C                     191      add.l       #4,a4
+0000116C                           192      
+0000116C  7000                     193      move.l      #0,d0
+0000116E                           194      
+0000116E                           195      ;iterate over each puck, 
+0000116E                           196      ;only checking higher id pucks than it
+0000116E                           197  resolveOuterLoop
+0000116E  5280                     198      add.l       #1,d0
+00001170  B0BC 00000006            199      cmp.l       #NUM_PUCKS,d0
+00001176  6700 024E                200      beq         resolveOuterLoopDone
+0000117A                           201      
+0000117A  D9FC 00000040            202      add.l       #PUCK_DATA_SIZE,a4
+00001180  2A4C                     203      move.l      a4,a5
+00001182  2200                     204      move.l      d0,d1
+00001184                           205  resolveInnerLoop
+00001184  5281                     206      add.l       #1,d1
+00001186  B2BC 00000006            207      cmp.l       #NUM_PUCKS,d1
+0000118C  6EE0                     208      bgt         resolveOuterLoop
+0000118E                           209      
+0000118E  DBFC 00000040            210      add.l       #PUCK_DATA_SIZE,a5
+00001194                           211      
+00001194                           212      ;check for collision
+00001194                           213      ;uses pythagorean cause circles
+00001194  242C 0004                214      move.l      4(a4),d2
+00001198  94AD 0004                215      sub.l       4(a5),d2
+0000119C  2802                     216      move.l      d2,d4
+0000119E  B4BC 00000000            217      cmp.l       #0,d2
+000011A4  6E00 0004                218      bgt         absFirstDone
+000011A8  4482                     219      neg.l       d2
+000011AA                           220  absFirstDone
+000011AA  E88A                     221      lsr.l       #4,d2  
+000011AC  C4C2                     222      mulu        d2,d2
+000011AE  262C 0008                223      move.l      8(a4),d3
+000011B2  96AD 0008                224      sub.l       8(a5),d3
+000011B6  2A03                     225      move.l      d3,d5
+000011B8  B6BC 00000000            226      cmp.l       #0,d3
+000011BE  6E00 0004                227      bgt         absSecondDone
+000011C2  4483                     228      neg.l       d3
+000011C4                           229  absSecondDone
+000011C4  E88B                     230      lsr.l       #4,d3
+000011C6  C6C3                     231      mulu        d3,d3
+000011C8  D483                     232      add.l       d3,d2
+000011CA                           233      ;check against radius squared
+000011CA                           234      ;we dont be doing sqrt
+000011CA  B4BC 00010000            235      cmp.l       #PUCK_SIZE_S,d2
+000011D0  6CB2                     236      bge         resolveInnerLoop
+000011D2                           237      
+000011D2                           238      ;set colliding pucks as active
+000011D2  38BC 0002                239      move.w      #2,(a4)
+000011D6  3ABC 0002                240      move.w      #2,(a5)
+000011DA                           241      
+000011DA                           242      ;clear some variables
+000011DA                           243      ;this formula is hefty for the
+000011DA                           244      ;ellastic collisions, but is
+000011DA                           245      ;convenient in that it doesn't
+000011DA                           246      ;use trig functions and only
+000011DA                           247      ;vector math
+000011DA  2F7C 00000000 0004       248      move.l      #0,4(sp)  ;xdx
+000011E2  2F7C 00000000 0008       249      move.l      #0,8(sp)  ;xdy
+000011EA  2F7C 00000000 000C       250      move.l      #0,12(sp) ;vdx
+000011F2  2F7C 00000000 0010       251      move.l      #0,16(sp) ;vdy
+000011FA  2F7C 00000000 0014       252      move.l      #0,20(sp)
+00001202  2F7C 00000000 0018       253      move.l      #0,24(sp)
+0000120A                           254      
+0000120A  2C4F                     255      move.l      sp,a6
+0000120C  588E                     256      add.l       #4,a6
+0000120E                           257      
+0000120E                           258      ;set xdx
+0000120E  242C 0004                259      move.l      4(a4),d2
+00001212  94AD 0004                260      sub.l       4(a5),d2
+00001216  2D42 0004                261      move.l      d2,4(a6)
+0000121A                           262      
+0000121A                           263      ;set xdy
+0000121A  242C 0008                264      move.l      8(a4),d2
+0000121E  94AD 0008                265      sub.l       8(a5),d2
+00001222  2D42 0008                266      move.l      d2,8(a6)
+00001226                           267      
+00001226                           268      ;set vdx
+00001226  242C 0014                269      move.l      20(a4),d2
+0000122A  94AD 0014                270      sub.l       20(a5),d2
+0000122E  2D42 000C                271      move.l      d2,12(a6)
+00001232                           272      
+00001232                           273      ;set vdy
+00001232  242C 0018                274      move.l      24(a4),d2
+00001236  94AD 0018                275      sub.l       24(a5),d2
+0000123A  2D42 0010                276      move.l      d2,16(a6)
+0000123E                           277      
+0000123E                           278      ;set dv . dx
+0000123E  362E 0006                279      move.w      6(a6),d3
+00001242  382E 000E                280      move.w      14(a6),d4
+00001246  C7C4                     281      muls        d4,d3
+00001248  B6BC 00000000            282      cmp.l       #0,d3
+0000124E  6D00 0008                283      blt         dvdxNegative1
+00001252  E88B                     284      lsr.l       #4,d3
+00001254  6000 0008                285      bra         dvdxPositive1
+00001258                           286  dvdxNegative1
+00001258  4483                     287      neg.l       d3
+0000125A  E88B                     288      lsr.l       #4,d3
+0000125C  4483                     289      neg.l       d3
+0000125E                           290  dvdxPositive1
+0000125E  382E 000A                291      move.w      10(a6),d4
+00001262  3A2E 0012                292      move.w      18(a6),d5
+00001266  C9C5                     293      muls        d5,d4
+00001268  B8BC 00000000            294      cmp.l       #0,d4
+0000126E  6D00 0008                295      blt         dvdxNegative2
+00001272  E88C                     296      lsr.l       #4,d4
+00001274  6000 0008                297      bra         dvdxPositive2
+00001278                           298  dvdxNegative2
+00001278  4484                     299      neg.l       d4
+0000127A  E88C                     300      lsr.l       #4,d4
+0000127C  4484                     301      neg.l       d4
+0000127E                           302  dvdxPositive2
+0000127E  D684                     303      add.l       d4,d3
+00001280                           304      
+00001280                           305      ;set |dx| 2
+00001280  7800                     306      move.l      #0,d4
+00001282  382E 0006                307      move.w      6(a6),d4
+00001286  C9C4                     308      muls        d4,d4
+00001288  7A00                     309      move.l      #0,d5
+0000128A  3A2E 000A                310      move.w      10(a6),d5
+0000128E  CBC5                     311      muls        d5,d5
+00001290  D885                     312      add.l       d5,d4
+00001292  E08C                     313      lsr.l       #8,d4
+00001294  E88C                     314      lsr.l       #4,d4
+00001296                           315      
+00001296                           316      
+00001296                           317      ; set (dv . dx) / |dx|2
+00001296  87C4                     318      divs        d4,d3
+00001298  7800                     319      move.l      #0,d4
+0000129A  3803                     320      move.w      d3,d4
+0000129C                           321      
+0000129C                           322      ; multiply previous by dx
+0000129C  3A2E 0006                323      move.w      6(a6),d5
+000012A0  3C2E 000A                324      move.w      10(a6),d6
+000012A4  CBC4                     325      muls        d4,d5
+000012A6  BABC 00000000            326      cmp.l       #0,d5
+000012AC  6D00 0008                327      blt         dvdxNegative4
+000012B0  E08D                     328      lsr.l       #8,d5
+000012B2  6000 0008                329      bra         dvdxPositive4
+000012B6                           330  dvdxNegative4
+000012B6  4485                     331      neg.l       d5
+000012B8  E08D                     332      lsr.l       #8,d5
+000012BA  4485                     333      neg.l       d5
+000012BC                           334  dvdxPositive4
+000012BC  CDC4                     335      muls        d4,d6
+000012BE  BCBC 00000000            336      cmp.l       #0,d6
+000012C4  6D00 0008                337      blt         dvdxNegative5
+000012C8  E08E                     338      lsr.l       #8,d6
+000012CA  6000 0008                339      bra         dvdxPositive5
+000012CE                           340  dvdxNegative5
+000012CE  4486                     341      neg.l       d6
+000012D0  E08E                     342      lsr.l       #8,d6
+000012D2  4486                     343      neg.l       d6
+000012D4                           344  dvdxPositive5
+000012D4                           345      
+000012D4                           346      ;subtract previous from v
+000012D4  4485                     347      neg.l       d5
+000012D6  4486                     348      neg.l       d6
+000012D8  DAAC 0014                349      add.l       20(a4),d5
+000012DC  DCAC 0018                350      add.l       24(a4),d6
+000012E0                           351      
+000012E0                           352      ;set new velocity
+000012E0  2945 001C                353      move.l      d5,28(a4)
+000012E4  2946 0020                354      move.l      d6,32(a4)
+000012E8                           355      
+000012E8                           356      ;repeat for the other puck
+000012E8                           357      
+000012E8                           358      ;set xdx
+000012E8  242D 0004                359      move.l      4(a5),d2
+000012EC  94AC 0004                360      sub.l       4(a4),d2
+000012F0  2D42 0004                361      move.l      d2,4(a6)
+000012F4                           362      
+000012F4                           363      ;set xdy
+000012F4  242D 0008                364      move.l      8(a5),d2
+000012F8  94AC 0008                365      sub.l       8(a4),d2
+000012FC  2D42 0008                366      move.l      d2,8(a6)
+00001300                           367      
+00001300                           368      ;set vdx
+00001300  242D 0014                369      move.l      20(a5),d2
+00001304  94AC 0014                370      sub.l       20(a4),d2
+00001308  2D42 000C                371      move.l      d2,12(a6)
+0000130C                           372      
+0000130C                           373      ;set vdy
+0000130C  242D 0018                374      move.l      24(a5),d2
+00001310  94AC 0018                375      sub.l       24(a4),d2
+00001314  2D42 0010                376      move.l      d2,16(a6)
+00001318                           377      
+00001318                           378      ;set dv . dx
+00001318  362E 0006                379      move.w      6(a6),d3
+0000131C  382E 000E                380      move.w      14(a6),d4
+00001320  C7C4                     381      muls        d4,d3
+00001322  B6BC 00000000            382      cmp.l       #0,d3
+00001328  6D00 0008                383      blt         dvdxNegative1B
+0000132C  E88B                     384      lsr.l       #4,d3
+0000132E  6000 0008                385      bra         dvdxPositive1B
+00001332                           386  dvdxNegative1B
+00001332  4483                     387      neg.l       d3
+00001334  E88B                     388      lsr.l       #4,d3
+00001336  4483                     389      neg.l       d3
+00001338                           390  dvdxPositive1B
+00001338  382E 000A                391      move.w      10(a6),d4
+0000133C  3A2E 0012                392      move.w      18(a6),d5
+00001340  C9C5                     393      muls        d5,d4
+00001342  B8BC 00000000            394      cmp.l       #0,d4
+00001348  6D00 0008                395      blt         dvdxNegative2B
+0000134C  E88C                     396      lsr.l       #4,d4
+0000134E  6000 0008                397      bra         dvdxPositive2B
+00001352                           398  dvdxNegative2B
+00001352  4484                     399      neg.l       d4
+00001354  E88C                     400      lsr.l       #4,d4
+00001356  4484                     401      neg.l       d4
+00001358                           402  dvdxPositive2B
+00001358  D684                     403      add.l       d4,d3
+0000135A                           404      
+0000135A                           405      ;set |dx| 2
+0000135A  7800                     406      move.l      #0,d4
+0000135C  382E 0006                407      move.w      6(a6),d4
+00001360  C9C4                     408      muls        d4,d4
+00001362  7A00                     409      move.l      #0,d5
+00001364  3A2E 000A                410      move.w      10(a6),d5
+00001368  CBC5                     411      muls        d5,d5
+0000136A  D885                     412      add.l       d5,d4
+0000136C  E08C                     413      lsr.l       #8,d4
+0000136E  E88C                     414      lsr.l       #4,d4
+00001370                           415      
+00001370                           416      
+00001370                           417      ; set (dv . dx) / |dx|2
+00001370  87C4                     418      divs        d4,d3
+00001372  7800                     419      move.l      #0,d4
+00001374  3803                     420      move.w      d3,d4
+00001376                           421      
+00001376                           422      ;multiply previous times dx
+00001376  3A2E 0006                423      move.w      6(a6),d5
+0000137A  3C2E 000A                424      move.w      10(a6),d6
+0000137E  CBC4                     425      muls        d4,d5
+00001380  BABC 00000000            426      cmp.l       #0,d5
+00001386  6D00 0008                427      blt         dvdxNegative4B
+0000138A  E08D                     428      lsr.l       #8,d5
+0000138C  6000 0008                429      bra         dvdxPositive4B
+00001390                           430  dvdxNegative4B
+00001390  4485                     431      neg.l       d5
+00001392  E08D                     432      lsr.l       #8,d5
+00001394  4485                     433      neg.l       d5
+00001396                           434  dvdxPositive4B
+00001396  CDC4                     435      muls        d4,d6
+00001398  BCBC 00000000            436      cmp.l       #0,d6
+0000139E  6D00 0008                437      blt         dvdxNegative5B
+000013A2  E08E                     438      lsr.l       #8,d6
+000013A4  6000 0008                439      bra         dvdxPositive5B
+000013A8                           440  dvdxNegative5B
+000013A8  4486                     441      neg.l       d6
+000013AA  E08E                     442      lsr.l       #8,d6
+000013AC  4486                     443      neg.l       d6
+000013AE                           444  dvdxPositive5B
+000013AE                           445      
+000013AE                           446      ; subtract previous from v
+000013AE  4485                     447      neg.l       d5
+000013B0  4486                     448      neg.l       d6
+000013B2  DAAD 0014                449      add.l       20(a5),d5
+000013B6  DCAD 0018                450      add.l       24(a5),d6
+000013BA                           451      ; set new v
+000013BA  2B45 001C                452      move.l      d5,28(a5)
+000013BE  2B46 0020                453      move.l      d6,32(a5)
+000013C2                           454  
+000013C2                           455      
+000013C2                           456      
+000013C2  6000 FDC0                457      bra         resolveInnerLoop
+000013C6                           458  resolveOuterLoopDone
+000013C6  4E75                     459      rts
+000013C8                           460  
+000013C8                           461  getPuckPower
+000013C8  286F 0028                462      move.l      40(sp),a4
+000013CC  297C 00000000 001C       463      move.l      #0,28(a4)
+000013D4  297C 00000100 0020       464      move.l      #PUCK_POW_DMS,32(a4)
+000013DC  2F7C 00000800 0030       465      move.l      #PUCK_POW_MIN,48(sp)
+000013E4  44AF 0030                466      neg.l       48(sp)
+000013E8  2F7C 00001800 0034       467      move.l      #PUCK_POW_MAX,52(sp)
+000013F0  44AF 0034                468      neg.l       52(sp)
+000013F4                           469  getPuckPowerLoop
+000013F4  2F57 003C                470      move.l      (sp),60(sp)
+000013F8  588F                     471      add.l       #4,sp
+000013FA  4EB9 000016A4            472      jsr         updatePucks
+00001400  4EB9 00001770            473      jsr         renderPucks
+00001406  4EB9 0000167E            474      jsr         setOldPos
+0000140C  598F                     475      sub.l       #4,sp
+0000140E  2EAF 003C                476      move.l      60(sp),(sp)
+00001412                           477      
+00001412  04AF 00000080 0030       478      sub.l       #PUCK_POW_MS,48(sp)
+0000141A  286F 0028                479      move.l      40(sp),a4      
+0000141E                           480      
+0000141E  202F 0030                481      move.l      48(sp),d0
+00001422  222F 0034                482      move.l      52(sp),d1
+00001426  B280                     483      cmp.l       d0,d1
+00001428  6C00 0014                484      bge         getPuckPowerLoopDone
+0000142C                           485      
+0000142C  7220                     486      move.l      #SPACE_KEY_CODE,d1
+0000142E  7013                     487      move.l      #GET_INPUT_TC,d0
+00001430  4E4F                     488      TRAP        #15
+00001432  0281 000000FF            489      andi.l      #$FF,d1
+00001438  6700 0004                490      beq         getPuckPowerLoopDone
+0000143C                           491      
+0000143C  60B6                     492      bra         getPuckPowerLoop
+0000143E                           493      
+0000143E                           494  getPuckPowerLoopDone
+0000143E                           495  
+0000143E                           496      
+0000143E  296F 0030 0020           497      move.l      48(sp),32(a4)
+00001444                           498      
+00001444  38BC 0002                499      move.w      #2,(a4)
+00001448  4E75                     500      rts
+0000144A                           501  
+0000144A                           502  getPuckPos
+0000144A  286F 0028                503      move.l      40(sp),a4
+0000144E                           504      
+0000144E  38BC 0001                505      move.w      #1,(a4)
+00001452  297C 0001A000 0010       506      move.l      #PUCK_START_Y,16(a4)
+0000145A                           507      
+0000145A  297C 00014000 000C       508      move.l      #PUCK_START_X,12(a4)
+00001462  297C 00000280 001C       509      move.l      #PUCK_POS_MS,28(a4)
+0000146A  297C 00000280 0014       510      move.l      #PUCK_POS_MS,20(a4)
+00001472  243C 00016800            511      move.l      #PUCK_MAX_X,d2
+00001478  263C 00011800            512      move.l      #PUCK_MIN_X,d3
+0000147E                           513      
+0000147E                           514  puckPosLoop
+0000147E  286F 0028                515      move.l      40(sp),a4
+00001482  202C 0004                516      move.l      4(a4),d0
+00001486  222C 001C                517      move.l      28(a4),d1
+0000148A  B440                     518      cmp         d0,d2
+0000148C  6F00 000C                519      ble         puckPosFlip
+00001490  B640                     520      cmp         d0,d3
+00001492  6C00 0006                521      bge         puckPosFlip
+00001496  6000 0004                522      bra         puckPosDontFlip
+0000149A                           523  puckPosFlip
+0000149A  4481                     524      neg.l       d1
+0000149C                           525  puckPosDontFlip
+0000149C  2941 001C                526      move.l      d1,28(a4)
+000014A0                           527  
+000014A0  2F57 003C                528      move.l      (sp),60(sp)
+000014A4  588F                     529      add.l       #4,sp
+000014A6  4EB9 000016A4            530      jsr         updatePucks
+000014AC  4EB9 00001770            531      jsr         renderPucks
+000014B2  4EB9 0000167E            532      jsr         setOldPos
+000014B8  598F                     533      sub.l       #4,sp
+000014BA  2EAF 003C                534      move.l      60(sp),(sp)
+000014BE                           535      
+000014BE                           536      ;check for player input
+000014BE  7220                     537      move.l      #SPACE_KEY_CODE,d1
+000014C0  7013                     538      move.l      #GET_INPUT_TC,d0
+000014C2  4E4F                     539      TRAP        #15
+000014C4  0281 000000FF            540      andi.l      #$FF,d1
+000014CA  67B2                     541      beq         puckPosLoop
+000014CC                           542      
+000014CC  297C 00000000 001C       543      move.l      #0,28(a4)
+000014D4                           544      
+000014D4  4E75                     545      rts
+000014D6                           546  
+000014D6                           547  updateScores
+000014D6                           548      ;checks the scores and print to screen
+000014D6                           549      ;uses 7 segment display
+000014D6  74FF                     550      move.l      #-1,d2
+000014D8                           551      
+000014D8  284F                     552      move.l      sp,a4
+000014DA  588C                     553      add.l       #4,a4
+000014DC                           554      
+000014DC  2F7C 00000000 0014       555      move.l      #0,20(sp)
+000014E4  2F7C 00000000 0018       556      move.l      #0,24(sp)
+000014EC                           557      
+000014EC                           558  updateScoresLoop
+000014EC                           559      ;check all the pucks, add to score
+000014EC  D9FC 00000040            560      add.l       #PUCK_DATA_SIZE,a4
+000014F2  5282                     561      add.l       #1,d2
+000014F4  B47C 0006                562      cmp         #NUM_PUCKS,d2
+000014F8  6700 00C4                563      beq         updateScoresLoopDone
+000014FC                           564      
+000014FC  0C6C 0000 0002           565      cmp.w       #0,2(a4)
+00001502  6600 0058                566      bne         updateScoresRed
+00001506                           567      
+00001506                           568      ;check if out of bounds
+00001506  263C 00016800            569      move.l      #PUCK_MAX_X,d3
+0000150C  B6AC 0004                570      cmp.l       4(a4),d3
+00001510  6DDA                     571      blt         updateScoresLoop
+00001512  263C 00011800            572      move.l      #PUCK_MIN_X,d3
+00001518  B6AC 0004                573      cmp.l       4(a4),d3
+0000151C  6ECE                     574      bgt         updateScoresLoop
+0000151E  263C 0001CC00            575      move.l      #PUCK_MAX_Y,d3
+00001524  B6AC 0008                576      cmp.l       8(a4),d3
+00001528  6DC2                     577      blt         updateScoresLoop
+0000152A  263C 00006400            578      move.l      #PUCK_MIN_Y,d3
+00001530  B6AC 0008                579      cmp.l       8(a4),d3
+00001534  6EB6                     580      bgt         updateScoresLoop
+00001536                           581      
+00001536                           582      ;check if worth more points
+00001536  52AF 0014                583      add.l       #1,20(sp)
+0000153A  263C 0000B400            584      move.l      #TWO_POINT,d3
+00001540  B6AC 0008                585      cmp.l       8(a4),d3
+00001544  6DA6                     586      blt         updateScoresLoop
+00001546  52AF 0014                587      add.l       #1,20(sp)
+0000154A  263C 00008C00            588      move.l      #THREE_POINT,d3
+00001550  B6AC 0008                589      cmp.l       8(a4),d3
+00001554  6D96                     590      blt         updateScoresLoop
+00001556  52AF 0014                591      add.l       #1,20(sp)
+0000155A  6090                     592      bra         updateScoresLoop
+0000155C                           593  updateScoresRed  
+0000155C  263C 00016800            594      move.l      #PUCK_MAX_X,d3
+00001562  B6AC 0004                595      cmp.l       4(a4),d3
+00001566  6D84                     596      blt         updateScoresLoop
+00001568  263C 00011800            597      move.l      #PUCK_MIN_X,d3
+0000156E  B6AC 0004                598      cmp.l       4(a4),d3
+00001572  6E00 FF78                599      bgt         updateScoresLoop
+00001576  263C 0001CC00            600      move.l      #PUCK_MAX_Y,d3
+0000157C  B6AC 0008                601      cmp.l       8(a4),d3
+00001580  6D00 FF6A                602      blt         updateScoresLoop
+00001584  263C 00006400            603      move.l      #PUCK_MIN_Y,d3
+0000158A  B6AC 0008                604      cmp.l       8(a4),d3
+0000158E  6E00 FF5C                605      bgt         updateScoresLoop
+00001592                           606      
+00001592  52AF 0018                607      add.l       #1,24(sp)
+00001596  263C 0000B400            608      move.l      #TWO_POINT,d3
+0000159C  B6AC 0008                609      cmp.l       8(a4),d3
+000015A0  6D00 FF4A                610      blt         updateScoresLoop
+000015A4  52AF 0018                611      add.l       #1,24(sp)
+000015A8  263C 00008C00            612      move.l      #THREE_POINT,d3
+000015AE  B6AC 0008                613      cmp.l       8(a4),d3
+000015B2  6D00 FF38                614      blt         updateScoresLoop
+000015B6  52AF 0018                615      add.l       #1,24(sp)
+000015BA  6000 FF30                616      bra         updateScoresLoop
+000015BE                           617  updateScoresLoopDone
+000015BE                           618      ;clear A score
+000015BE  263C FFD49900            619      move.l      #BG_COLOR,d3
+000015C4  7808                     620      move.l      #8,d4
+000015C6  2A3C 000000E1            621      move.l      #SCORE_A_X,d5
+000015CC  2C3C 00000096            622      move.l      #SCORE_A_Y,d6
+000015D2  4EB9 0000185E            623      jsr         drawScore
+000015D8                           624      ;clear B score
+000015D8  263C FFD49900            625      move.l      #BG_COLOR,d3
+000015DE  7808                     626      move.l      #8,d4
+000015E0  2A3C 0000019F            627      move.l      #SCORE_B_X,d5
+000015E6  2C3C 00000096            628      move.l      #SCORE_B_Y,d6
+000015EC  4EB9 0000185E            629      jsr         drawScore
+000015F2                           630  
+000015F2                           631      ;get A score
+000015F2  263C 000000FF            632      move.l      #SCORE_A_COLOR,d3
+000015F8  282F 0014                633      move.l      20(sp),d4
+000015FC  2A3C 000000E1            634      move.l      #SCORE_A_X,d5
+00001602  2C3C 00000096            635      move.l      #SCORE_A_Y,d6
+00001608  4EB9 0000185E            636      jsr         drawScore
+0000160E                           637      ;get B score
+0000160E  263C 00FF0000            638      move.l      #SCORE_B_COLOR,d3
+00001614  282F 0018                639      move.l      24(sp),d4
+00001618  2A3C 0000019F            640      move.l      #SCORE_B_X,d5
+0000161E  2C3C 00000096            641      move.l      #SCORE_B_Y,d6
+00001624  4EB9 0000185E            642      jsr         drawScore
+0000162A                           643      
+0000162A  103C 005E                644      move.b      #REPAINT_TC,d0
+0000162E  4E4F                     645      TRAP        #15
+00001630  4E75                     646      rts
+00001632                           647  
+00001632                           648  
+00001632                           649  seedRandom
+00001632  4286                     650      clr.l       d6
+00001634  7008                     651      move.l      #GET_TIME_CODE,d0
+00001636  4E4F                     652      TRAP        #15
+00001638  23C1 0012EB5C            653      move.l      d1,RANDOMVAL
+0000163E  4E75                     654      rts
+00001640                           655      
+00001640                           656  getRandomBool
+00001640                           657      ;returns 0 or 1
+00001640  48E7 8000                658      movem.l d0,-(sp)
+00001644  48E7 4000                659      movem.l d1,-(sp)
+00001648  48E7 2000                660      movem.l d2,-(sp)
+0000164C  2039 0012EB5C            661      move.l  RANDOMVAL,d0
+00001652  72AF                     662      moveq   #$AF-$100,d1
+00001654  7412                     663      moveq   #18,d2
+00001656                           664  Ninc0   
+00001656  D080                     665      add.l   d0,d0
+00001658  6400 0004                666      bcc Ninc1
+0000165C  B300                     667      eor.b   d1,d0
+0000165E                           668  Ninc1
+0000165E  51CA FFF6                669      dbf d2,Ninc0
+00001662                           670      
+00001662  23C0 0012EB5C            671      move.l  d0,RANDOMVAL
+00001668  4286                     672      clr.l   d6
+0000166A  1C00                     673      move.b  d0,d6
+0000166C                           674      
+0000166C  4CDF 0004                675      movem.l (sp)+,d2
+00001670  4CDF 0002                676      movem.l (sp)+,d1
+00001674  4CDF 0001                677      movem.l (sp)+,d0
+00001678                           678      
+00001678  0246 0001                679      andi    #1,d6
+0000167C                           680      
+0000167C  4E75                     681      rts
+0000167E                           682  
+0000167E                           683  setOldPos  
+0000167E  284F                     684      move.l      sp,a4
+00001680  588C                     685      add.l       #4,a4
+00001682  72FF                     686      move.l      #-1,d1
+00001684                           687  setOldPosLoop
+00001684  5281                     688      add.l       #1,d1
+00001686  B27C 0006                689      cmp         #NUM_PUCKS,d1
+0000168A  6700 0016                690      beq         setOldPosLoopEnd
+0000168E  D9FC 00000040            691      add.l       #PUCK_DATA_SIZE,a4
+00001694                           692      
+00001694                           693      ;copy new position to old
+00001694  296C 000C 0004           694      move.l      12(a4),4(a4)
+0000169A  296C 0010 0008           695      move.l      16(a4),8(a4)
+000016A0                           696      
+000016A0  60E2                     697      bra         setOldPosLoop
+000016A2                           698  setOldPosLoopEnd
+000016A2  4E75                     699      rts
+000016A4                           700  
+000016A4                           701  
+000016A4                           702  updatePucks
+000016A4  284F                     703      move.l      sp,a4
+000016A6  588C                     704      add.l       #4,a4
+000016A8  72FF                     705      move.l      #-1,d1
+000016AA                           706  updatePucksLoop
+000016AA  5281                     707      add.l       #1,d1
+000016AC  B27C 0006                708      cmp         #NUM_PUCKS,d1
+000016B0  6700 00BC                709      beq         updatePucksLoopEnd
+000016B4  D9FC 00000040            710      add.l       #PUCK_DATA_SIZE,a4
+000016BA                           711      
+000016BA                           712      ;If puck isn't active, skip it
+000016BA  0C54 0000                713      cmp.w       #0,(a4)
+000016BE  67EA                     714      beq         updatePucksLoop
+000016C0  0C54 0001                715      cmp.w       #1,(a4)
+000016C4  6700 0060                716      beq         skipFriction
+000016C8  0C54 0003                717      cmp.w       #3,(a4)
+000016CC  67DC                     718      beq         updatePucksLoop
+000016CE                           719      
+000016CE                           720      ;apply friction
+000016CE  202C 001C                721      move.l      28(a4),d0
+000016D2  B07C 0000                722      cmp         #0,d0
+000016D6  6D00 000C                723      blt         negativeX
+000016DA  C1FC 00F0                724      muls        #FRICTION,d0
+000016DE  E088                     725      lsr.l       #8,d0
+000016E0  6000 000C                726      bra         doneX
+000016E4                           727  negativeX
+000016E4  4480                     728      neg.l       d0
+000016E6  C1FC 00F0                729      muls        #FRICTION,d0
+000016EA  E088                     730      lsr.l       #8,d0
+000016EC  4480                     731      neg.l       d0
+000016EE                           732  doneX
+000016EE  2940 001C                733      move.l      d0,28(a4)
+000016F2  296C 001C 0014           734      move.l      28(a4),20(a4)
+000016F8                           735      
+000016F8  202C 0020                736      move.l      32(a4),d0
+000016FC  B07C 0000                737      cmp         #0,d0
+00001700  6D00 000C                738      blt         negativeY
+00001704  C1FC 00F0                739      muls        #FRICTION,d0
+00001708  E088                     740      lsr.l       #8,d0
+0000170A  6000 000C                741      bra         doneY
+0000170E                           742  negativeY
+0000170E  4480                     743      neg.l       d0
+00001710  C1FC 00F0                744      muls        #FRICTION,d0
+00001714  E088                     745      lsr.l       #8,d0
+00001716  4480                     746      neg.l       d0
+00001718                           747  doneY
+00001718  2940 0020                748      move.l      d0,32(a4)
+0000171C  296C 0020 0018           749      move.l      32(a4),24(a4)
+00001722  6000 000E                750      bra dontSkipFriction
+00001726                           751  skipFriction
+00001726  296C 001C 0014           752      move.l      28(a4),20(a4)
+0000172C  296C 0020 0018           753      move.l      32(a4),24(a4)
+00001732                           754  dontSkipFriction
+00001732                           755      
+00001732                           756      ;check if not moving
+00001732  0CAC 00000000 0014       757      cmp.l       #0,20(a4)
+0000173A  6600 0016                758      bne         hasVelocity
+0000173E  0CAC 00000000 0018       759      cmp.l       #0,24(a4)
+00001746  6600 000A                760      bne         hasVelocity
+0000174A  38BC 0003                761      move.w      #3,(a4)
+0000174E  6000 000A                762      bra         noVelocity
+00001752                           763  hasVelocity
+00001752  2F7C 00000001 002C       764      move.l      #1,44(sp)
+0000175A                           765  noVelocity
+0000175A  202C 0014                766      move.l      20(a4),d0
+0000175E  D1AC 000C                767      add.l       d0,12(a4)
+00001762  202C 0018                768      move.l      24(a4),d0
+00001766  D1AC 0010                769      add.l       d0,16(a4)
+0000176A                           770      
+0000176A  6000 FF3E                771      bra         updatePucksLoop
+0000176E                           772  updatePucksLoopEnd
+0000176E  4E75                     773      rts
+00001770                           774  
+00001770                           775  updatePucksSetNotActive
+00001770                           776      
+00001770                           777  
+00001770                           778  renderPucks
+00001770  2F57 0020                779      move.l      (sp),32(sp)
+00001774  284F                     780      move.l      sp,a4
+00001776  588C                     781      add.l       #4,a4
+00001778  72FF                     782      move.l      #-1,d1
+0000177A                           783  deletePucksLoop
+0000177A                           784      ;draws bg over place where puck was
+0000177A  5281                     785      add.l       #1,d1
+0000177C  B27C 0006                786      cmp         #NUM_PUCKS,d1
+00001780  6700 004A                787      beq         deletePucksLoopEnd
+00001784  D9FC 00000040            788      add.l       #PUCK_DATA_SIZE,a4
+0000178A                           789      
+0000178A  41F9 00001BC8            790      lea         imgBg,a0
+00001790                           791      ;Set other parameters
+00001790  2F7C 00000010 000C       792      move.l      #PUCK_SIZE,12(sp)
+00001798  2F7C 00000010 0010       793      move.l      #PUCK_SIZE,16(sp)
+000017A0  202C 0004                794      move.l      4(a4),d0
+000017A4  E088                     795      lsr.l       #8,d0
+000017A6  5180                     796      sub.l       #PUCK_SIZE>>1,d0      
+000017A8  2F40 0014                797      move.l      d0,20(sp)
+000017AC  202C 0008                798      move.l      8(a4),d0
+000017B0  E088                     799      lsr.l       #8,d0
+000017B2  5180                     800      sub.l       #PUCK_SIZE>>1,d0  
+000017B4  2F40 0018                801      move.l      d0,24(sp)
+000017B8  2F6F 0014 0004           802      move.l      20(sp),4(sp)
+000017BE  2F6F 0018 0008           803      move.l      24(sp),8(sp)
+000017C4  4EB9 00001A52            804      jsr         displayBitmap
+000017CA  60AE                     805      bra         deletePucksLoop
+000017CC                           806  deletePucksLoopEnd
+000017CC                           807  
+000017CC                           808      ;draw the pucks where they are now
+000017CC  284F                     809      move.l      sp,a4
+000017CE  588C                     810      add.l       #4,a4
+000017D0  72FF                     811      move.l      #-1,d1
+000017D2                           812  renderPucksLoop
+000017D2  5281                     813      add.l       #1,d1
+000017D4  B27C 0006                814      cmp         #NUM_PUCKS,d1
+000017D8  6700 0078                815      beq         renderPucksLoopEnd
+000017DC  D9FC 00000040            816      add.l       #PUCK_DATA_SIZE,a4
+000017E2                           817      
+000017E2                           818      ;If puck isn't active, skip it
+000017E2                           819      ;cmp.w       #0,(a4)
+000017E2                           820      ;beq         renderPucksLoop
+000017E2                           821      
+000017E2                           822      ;Set puck color
+000017E2  0C6C 0000 0002           823      cmp.w       #0,2(a4)
+000017E8  6700 0016                824      beq         chooseRed
+000017EC  0C6C 0002 0002           825      cmp.w       #2,2(a4)
+000017F2  6700 0016                826      beq         chooseYellow
+000017F6  41F9 0012E0F4            827      lea         imgBlue,a0
+000017FC  6000 0012                828      bra         choseColor
+00001800                           829  chooseRed
+00001800  41F9 0012DC5E            830      lea         imgRed,a0
+00001806  6000 0008                831      bra         choseColor
+0000180A                           832  chooseYellow
+0000180A  41F9 0012E58A            833      lea         imgYellow,a0
+00001810                           834  choseColor
+00001810  2E88                     835      move.l      a0,(sp)
+00001812                           836      ;Set other parameters
+00001812  2F7C 00000000 0004       837      move.l      #0,4(sp)
+0000181A  2F7C 00000000 0008       838      move.l      #0,8(sp)
+00001822  2F7C 00000010 000C       839      move.l      #PUCK_SIZE,12(sp)
+0000182A  2F7C 00000010 0010       840      move.l      #PUCK_SIZE,16(sp)
+00001832  202C 000C                841      move.l      12(a4),d0
+00001836  E088                     842      lsr.l       #8,d0
+00001838  5180                     843      sub.l       #PUCK_SIZE>>1,d0      
+0000183A  2F40 0014                844      move.l      d0,20(sp)
+0000183E  202C 0010                845      move.l      16(a4),d0
+00001842  E088                     846      lsr.l       #8,d0
+00001844  5180                     847      sub.l       #PUCK_SIZE>>1,d0  
+00001846  2F40 0018                848      move.l      d0,24(sp)
+0000184A  4EB9 00001A52            849      jsr         displayBitmap
+00001850  6080                     850      bra         renderPucksLoop
+00001852                           851  renderPucksLoopEnd
+00001852  2EAF 0020                852      move.l      32(sp),(sp)
+00001856  103C 005E                853      move.b      #REPAINT_TC,d0
+0000185A  4E4F                     854      trap        #15
+0000185C  4E75                     855      rts
+0000185E                           856      
+0000185E                           857  
+0000185E                           858  
+0000185E                           859  drawScore
+0000185E                           860      ;d3 Color
+0000185E                           861      ;d4 Value
+0000185E                           862      ;d5 Center X
+0000185E                           863      ;d6 Center Y
+0000185E                           864      
+0000185E                           865      ;Set pen colors
+0000185E  2203                     866      move.l      d3,d1
+00001860  7050                     867      move.l      #PEN_COLOR_TC,d0
+00001862  4E4F                     868      TRAP        #15
+00001864  7051                     869      move.l      #FILL_COLOR_TC,d0
+00001866  4E4F                     870      TRAP        #15
+00001868                           871      ;Set pen size
+00001868  7201                     872      move.l      #1,d1
+0000186A  705D                     873      move.l      #PEN_WIDTH_TC,d0
+0000186C  4E4F                     874      TRAP        #15
+0000186E                           875      
+0000186E                           876      ;Find segment code
+0000186E  41F9 0012EB34            877      lea         SEGMENT_0, a0
+00001874  C8FC 0004                878      mulu        #4,d4
+00001878  D1C4                     879      add.l       d4, a0
+0000187A  2E10                     880      move.l      (a0),d7
+0000187C                           881      
+0000187C                           882      ;set rectangle code
+0000187C  7057                     883      move.l      #DRAW_RECT_TC,d0
+0000187E                           884      
+0000187E  7240                     885      move.l      #64, d1
+00001880  C247                     886      and         d7,d1
+00001882  B27C 0000                887      cmp         #0, d1
+00001886  6700 0028                888      beq         aSkipA
+0000188A                           889      ;drawA
+0000188A                           890      ;horizontal
+0000188A  2205                     891      move.l      d5,d1
+0000188C  2605                     892      move.l      d5,d3
+0000188E  0481 0000000A            893      sub.l       #SCORE_A_LEN>>1,d1
+00001894  0683 0000000A            894      add.l       #SCORE_A_LEN>>1,d3
+0000189A  2406                     895      move.l      d6,d2
+0000189C  2806                     896      move.l      d6,d4
+0000189E  5582                     897      sub.l       #SCORE_A_THICK>>1,d2
+000018A0  5484                     898      add.l       #SCORE_A_THICK>>1,d4
+000018A2                           899      ;adjustments
+000018A2  0482 00000014            900      sub.l       #SCORE_A_LEN,d2
+000018A8  0484 00000014            901      sub.l       #SCORE_A_LEN,d4
+000018AE  4E4F                     902      TRAP        #15
+000018B0                           903  aSkipA
+000018B0  7220                     904      move.l      #32, d1
+000018B2  C247                     905      and         d7,d1
+000018B4  B27C 0000                906      cmp         #0, d1
+000018B8  6700 0034                907      beq         aSkipB
+000018BC                           908      ;drawB
+000018BC                           909      ;vertcal
+000018BC  2205                     910      move.l      d5,d1
+000018BE  2605                     911      move.l      d5,d3
+000018C0  5581                     912      sub.l       #SCORE_A_THICK>>1,d1
+000018C2  5483                     913      add.l       #SCORE_A_THICK>>1,d3
+000018C4  2406                     914      move.l      d6,d2
+000018C6  2806                     915      move.l      d6,d4
+000018C8  0482 0000000A            916      sub.l       #SCORE_A_LEN>>1,d2
+000018CE  0684 0000000A            917      add.l       #SCORE_A_LEN>>1,d4
+000018D4                           918      ;adjustments
+000018D4  0482 0000000A            919      sub.l       #SCORE_A_LEN>>1,d2
+000018DA  0484 0000000A            920      sub.l       #SCORE_A_LEN>>1,d4
+000018E0  0681 0000000A            921      add.l       #SCORE_A_LEN>>1,d1
+000018E6  0683 0000000A            922      add.l       #SCORE_A_LEN>>1,d3
+000018EC  4E4F                     923      TRAP        #15
+000018EE                           924  aSkipB
+000018EE  7210                     925      move.l      #16, d1
+000018F0  C247                     926      and         d7,d1
+000018F2  B27C 0000                927      cmp         #0, d1
+000018F6  6700 0034                928      beq         aSkipC
+000018FA                           929      ;drawC
+000018FA                           930      ;vertcal
+000018FA  2205                     931      move.l      d5,d1
+000018FC  2605                     932      move.l      d5,d3
+000018FE  5581                     933      sub.l       #SCORE_A_THICK>>1,d1
+00001900  5483                     934      add.l       #SCORE_A_THICK>>1,d3
+00001902  2406                     935      move.l      d6,d2
+00001904  2806                     936      move.l      d6,d4
+00001906  0482 0000000A            937      sub.l       #SCORE_A_LEN>>1,d2
+0000190C  0684 0000000A            938      add.l       #SCORE_A_LEN>>1,d4
+00001912                           939      ;adjustments
+00001912  0682 0000000A            940      add.l       #SCORE_A_LEN>>1,d2
+00001918  0684 0000000A            941      add.l       #SCORE_A_LEN>>1,d4
+0000191E  0681 0000000A            942      add.l       #SCORE_A_LEN>>1,d1
+00001924  0683 0000000A            943      add.l       #SCORE_A_LEN>>1,d3
+0000192A  4E4F                     944      TRAP        #15
+0000192C                           945  aSkipC
+0000192C  7208                     946      move.l      #8, d1
+0000192E  C247                     947      and         d7,d1
+00001930  B27C 0000                948      cmp         #0, d1
+00001934  6700 0028                949      beq         aSkipD
+00001938                           950      ;drawD
+00001938                           951      ;horizontal
+00001938  2205                     952      move.l      d5,d1
+0000193A  2605                     953      move.l      d5,d3
+0000193C  0481 0000000A            954      sub.l       #SCORE_A_LEN>>1,d1
+00001942  0683 0000000A            955      add.l       #SCORE_A_LEN>>1,d3
+00001948  2406                     956      move.l      d6,d2
+0000194A  2806                     957      move.l      d6,d4
+0000194C  5582                     958      sub.l       #SCORE_A_THICK>>1,d2
+0000194E  5484                     959      add.l       #SCORE_A_THICK>>1,d4
+00001950                           960      ;adjustments
+00001950  0682 00000014            961      add.l       #SCORE_A_LEN,d2
+00001956  0684 00000014            962      add.l       #SCORE_A_LEN,d4
+0000195C  4E4F                     963      TRAP        #15
+0000195E                           964  aSkipD
+0000195E  7204                     965      move.l      #4, d1
+00001960  C247                     966      and         d7,d1
+00001962  B27C 0000                967      cmp         #0, d1
+00001966  6700 0034                968      beq         aSkipE
+0000196A                           969      ;drawE
+0000196A                           970      ;vertcal
+0000196A  2205                     971      move.l      d5,d1
+0000196C  2605                     972      move.l      d5,d3
+0000196E  5581                     973      sub.l       #SCORE_A_THICK>>1,d1
+00001970  5483                     974      add.l       #SCORE_A_THICK>>1,d3
+00001972  2406                     975      move.l      d6,d2
+00001974  2806                     976      move.l      d6,d4
+00001976  0482 0000000A            977      sub.l       #SCORE_A_LEN>>1,d2
+0000197C  0684 0000000A            978      add.l       #SCORE_A_LEN>>1,d4
+00001982                           979      ;adjustments
+00001982  0682 0000000A            980      add.l       #SCORE_A_LEN>>1,d2
+00001988  0684 0000000A            981      add.l       #SCORE_A_LEN>>1,d4
+0000198E  0481 0000000A            982      sub.l       #SCORE_A_LEN>>1,d1
+00001994  0483 0000000A            983      sub.l       #SCORE_A_LEN>>1,d3
+0000199A  4E4F                     984      TRAP        #15
+0000199C                           985  aSkipE
+0000199C  7202                     986      move.l      #2, d1
+0000199E  C247                     987      and         d7,d1
+000019A0  B27C 0000                988      cmp         #0, d1
+000019A4  6700 0034                989      beq         aSkipF
+000019A8                           990      ;drawF
+000019A8                           991      ;vertcal
+000019A8  2205                     992      move.l      d5,d1
+000019AA  2605                     993      move.l      d5,d3
+000019AC  5581                     994      sub.l       #SCORE_A_THICK>>1,d1
+000019AE  5483                     995      add.l       #SCORE_A_THICK>>1,d3
+000019B0  2406                     996      move.l      d6,d2
+000019B2  2806                     997      move.l      d6,d4
+000019B4  0482 0000000A            998      sub.l       #SCORE_A_LEN>>1,d2
+000019BA  0684 0000000A            999      add.l       #SCORE_A_LEN>>1,d4
+000019C0                          1000      ;adjustments
+000019C0  0482 0000000A           1001      sub.l       #SCORE_A_LEN>>1,d2
+000019C6  0484 0000000A           1002      sub.l       #SCORE_A_LEN>>1,d4
+000019CC  0481 0000000A           1003      sub.l       #SCORE_A_LEN>>1,d1
+000019D2  0483 0000000A           1004      sub.l       #SCORE_A_LEN>>1,d3
+000019D8  4E4F                    1005      TRAP        #15
+000019DA                          1006  aSkipF
+000019DA  7201                    1007      move.l      #1, d1
+000019DC  C247                    1008      and         d7,d1
+000019DE  B27C 0000               1009      cmp         #0, d1
+000019E2  6700 001C               1010      beq         aSkipG
+000019E6                          1011      ;drawG
+000019E6                          1012      ;horizontal
+000019E6  2205                    1013      move.l      d5,d1
+000019E8  2605                    1014      move.l      d5,d3
+000019EA  0481 0000000A           1015      sub.l       #SCORE_A_LEN>>1,d1
+000019F0  0683 0000000A           1016      add.l       #SCORE_A_LEN>>1,d3
+000019F6  2406                    1017      move.l      d6,d2
+000019F8  2806                    1018      move.l      d6,d4
+000019FA  5582                    1019      sub.l       #SCORE_A_THICK>>1,d2
+000019FC  5484                    1020      add.l       #SCORE_A_THICK>>1,d4
+000019FE                          1021      ;adjustments
+000019FE  4E4F                    1022      TRAP        #15
+00001A00                          1023  aSkipG
+00001A00  4E75                    1024      rts
+00001A02                          1025  
+00001A02                          1026  saveRegisters ;saves registers d0-d6 to stack
+00001A02  9FFC 0000001C           1027      sub.l       #28,sp
+00001A08  2EAF 001C               1028      move.l      28(sp),(sp)
+00001A0C  2F40 0004               1029      move.l      d0,4(sp)
+00001A10  2F41 0008               1030      move.l      d1,8(sp)
+00001A14  2F42 000C               1031      move.l      d2,12(sp)
+00001A18  2F43 0010               1032      move.l      d3,16(sp)
+00001A1C  2F44 0014               1033      move.l      d4,20(sp)
+00001A20  2F45 0018               1034      move.l      d5,24(sp)
+00001A24  2F46 001C               1035      move.l      d6,28(sp)
+00001A28  4E75                    1036      rts
+00001A2A                          1037      
+00001A2A                          1038  restoreRegisters ;takes values back from stack to registers
+00001A2A  202F 0004               1039      move.l      4(sp),d0
+00001A2E  222F 0008               1040      move.l      8(sp),d1
+00001A32  242F 000C               1041      move.l      12(sp),d2
+00001A36  262F 0010               1042      move.l      16(sp),d3
+00001A3A  282F 0014               1043      move.l      20(sp),d4
+00001A3E  2A2F 0018               1044      move.l      24(sp),d5
+00001A42  2C2F 001C               1045      move.l      28(sp),d6
+00001A46  2F57 001C               1046      move.l      (sp),28(sp)
+00001A4A  DFFC 0000001C           1047      add.l       #28,sp
+00001A50  4E75                    1048      rts
+00001A52                          1049      
+00001A52                          1050  
+00001A52                          1051  displayBitmap
+00001A52                          1052  ;accepts two numbers on the stack
+00001A52                          1053  ;returns value in d7
+00001A52                          1054  ;d0 and d1 unchanged
+00001A52  4EB8 1A02               1055      jsr saveRegisters
+00001A56                          1056       
+00001A56  2028 002E               1057      move.l  46(a0),d0
+00001A5A  4EB9 00001B52           1058      jsr flipEndian
+00001A60  2207                    1059      move.l  d7,d1
+00001A62  2028 000A               1060      move.l  10(a0),d0
+00001A66  4EB9 00001B52           1061      jsr flipEndian
+00001A6C  2247                    1062      move.l  d7,a1
+00001A6E  D3C8                    1063      add.l   a0,a1
+00001A70  2C4F                    1064      move.l  sp,a6
+00001A72                          1065      
+00001A72                          1066      
+00001A72  598F                    1067      sub.l   #4,sp
+00001A74  2028 0012               1068      move.l  18(a0),d0 ;width
+00001A78  4EB9 00001B52           1069      jsr flipEndian
+00001A7E  2E87                    1070      move.l  d7,(sp)
+00001A80                          1071      
+00001A80  598F                    1072      sub.l   #4,sp
+00001A82  2028 0016               1073      move.l  22(a0),d0 ;height
+00001A86  4EB9 00001B52           1074      jsr flipEndian
+00001A8C  2E87                    1075      move.l  d7,(sp)
+00001A8E                          1076      
+00001A8E  598F                    1077      sub.l   #4,sp
+00001A90                          1078      
+00001A90  2248                    1079      move.l  a0,a1
+00001A92  2028 000A               1080      move.l  10(a0),d0 ;pixel data address
+00001A96  4EB9 00001B52           1081      jsr flipEndian
+00001A9C  D3C7                    1082      add.l   d7,a1
+00001A9E                          1083          
+00001A9E  247C 00000000           1084      move.l  #0,a2  ;current row bit
+00001AA4  267C 00000000           1085      move.l  #0,a3  ;start row bit
+00001AAA  7000                    1086      move.l  #0,d0  ;function input
+00001AAC  7200                    1087      move.l  #0,d1  ;display X and Color
+00001AAE  242F 003C               1088      move.l  60(sp),d2  ;display Y
+00001AB2  76FF                    1089      move.l  #-1,d3  ;display X
+00001AB4  7800                    1090      move.l  #0,d4  ;counter X
+00001AB6  7A00                    1091      move.l  #0,d5  ;counter Y
+00001AB8  7C00                    1092      move.l  #0,d6  ;row bits
+00001ABA  7E00                    1093      move.l  #0,d7  ;misc holding
+00001ABC                          1094         
+00001ABC  2E2F 0004               1095      move.l  4(sp),d7
+00001AC0  9EAF 003C               1096      sub.l   60(sp),d7
+00001AC4  9EAF 0034               1097      sub.l   52(sp),d7
+00001AC8  2C2F 0008               1098      move.l  8(sp),d6
+00001ACC  CCFC 0004               1099      mulu    #4,d6
+00001AD0  CEC6                    1100      mulu    d6,d7
+00001AD2  202F 0030               1101      move.l  48(sp),d0
+00001AD6  C0FC 0004               1102      mulu    #4,d0
+00001ADA  222F 0034               1103      move.l  52(sp),d1
+00001ADE  C2C6                    1104      mulu    d6,d1
+00001AE0  2207                    1105      move.l  d7,d1
+00001AE2  D081                    1106      add.l   d1,d0
+00001AE4  2449                    1107      move.l  a1,a2
+00001AE6  2649                    1108      move.l  a1,a3
+00001AE8  D5C0                    1109      add.l   d0,a2
+00001AEA  D7C0                    1110      add.l   d0,a3
+00001AEC  2A2F 003C               1111      move.l  60(sp),d5
+00001AF0                          1112  outerLoopThirtyTwo
+00001AF0  76FF                    1113      move.l  #-1,d3
+00001AF2  0682 FFFFFFFF           1114      add.l   #-1,d2
+00001AF8  244B                    1115      move.l  a3,a2
+00001AFA  D7C6                    1116      add.l   d6,a3
+00001AFC  282F 0038               1117      move.l  56(sp),d4
+00001B00  5385                    1118      sub.l   #1,d5
+00001B02  BA7C 0000               1119      cmp     #0,d5
+00001B06  6D00 003E               1120      blt     drawDone
+00001B0A                          1121  innerLoopThirtyTwo
+00001B0A  5283                    1122      add.l   #1,d3
+00001B0C  5384                    1123      sub.l   #1,d4
+00001B0E  B87C 0000               1124      cmp     #0,d4
+00001B12  6DDC                    1125      blt     outerLoopThirtyTwo
+00001B14                          1126      ;set color
+00001B14  2212                    1127      move.l  (a2),d1
+00001B16  B23C 0000               1128      cmp.b   #0,d1
+00001B1A  6700 001E               1129      beq     skipThisPixel
+00001B1E  E089                    1130      LSR.l   #8,d1
+00001B20  103C 0050               1131      move.b  #PEN_COLOR_TC,d0
+00001B24  4E4F                    1132      trap    #15
+00001B26                          1133      ;draw
+00001B26  2203                    1134      move.l  d3,d1
+00001B28  D2AF 0040               1135      add.l   64(sp),d1
+00001B2C  D4AF 0044               1136      add.l   68(sp),d2
+00001B30  103C 0052               1137      move.b  #DRAW_PIXEL_TC,d0
+00001B34  4E4F                    1138      trap    #15
+00001B36  94AF 0044               1139      sub.l   68(sp),d2
+00001B3A                          1140  skipThisPixel 
+00001B3A  588A                    1141      add.l   #4,a2
+00001B3C  4EF8 1B0A               1142      jmp     innerLoopThirtyTwo
+00001B40                          1143  
+00001B40  4EF9 00001B46           1144      jmp drawDone
+00001B46                          1145  drawDone
+00001B46                          1146      
+00001B46  DFFC 0000000C           1147      add.l   #12,sp
+00001B4C  4EB8 1A2A               1148      jsr restoreRegisters
+00001B50  4E75                    1149      rts
+00001B52                          1150  
+00001B52                          1151  
+00001B52                          1152  flipEndian
+00001B52  1E00                    1153      move.b  d0,d7
+00001B54  E088                    1154      LSR.l   #8,d0
+00001B56  E18F                    1155      LSL.l   #8,d7
+00001B58  1E00                    1156      move.b  d0,d7
+00001B5A  E088                    1157      LSR.l  #8,d0
+00001B5C  E18F                    1158      LSL.l   #8,d7
+00001B5E  1E00                    1159      move.b  d0,d7
+00001B60  E088                    1160      LSR.l   #8,d0
+00001B62  E18F                    1161      LSL.l   #8,d7
+00001B64  1E00                    1162      move.b  d0,d7   
+00001B66  4E75                    1163      rts
+00001B68                          1164      
+00001B68                          1165  flipEndianWord
+00001B68  7E00                    1166      move.l  #0,d7
+00001B6A  1E00                    1167      move.b  d0,d7
+00001B6C  E088                    1168      LSR.l   #8,d0
+00001B6E  E18F                    1169      LSL.l   #8,d7
+00001B70  1E00                    1170      move.b  d0,d7
+00001B72  4E75                    1171      rts
+00001B74                          1172      
+00001B74                          1173  errorOffsetNonNegative
+00001B74  700D                    1174      move.l  #13,d0
+00001B76  43F9 0012EA20           1175      lea     offsetNonNegative,a1
+00001B7C  4E4F                    1176      trap    #15
+00001B7E  4E72 2000               1177      STOP    #$2000
+00001B82                          1178      
+00001B82                          1179  errorOffsetTooHigh
+00001B82  700D                    1180      move.l  #13,d0
+00001B84  43F9 0012EA46           1181      lea     offsetTooHigh,a1
+00001B8A  4E4F                    1182      trap    #15
+00001B8C  4E72 2000               1183      STOP    #$2000
+00001B90                          1184      
+00001B90                          1185  errorDimensionsNonNegative
+00001B90  700D                    1186      move.l  #13,d0
+00001B92  43F9 0012EA86           1187      lea     dimensionsNonNegative,a1
+00001B98  4E4F                    1188      trap    #15
+00001B9A  4E72 2000               1189      STOP    #$2000
+00001B9E                          1190      
+00001B9E                          1191  errorThirtyTwoBitOnly
+00001B9E  700D                    1192      move.l  #13,d0
+00001BA0  43F9 0012EAB5           1193      lea     thirtyTwoBitOnly,a1
+00001BA6  4E4F                    1194      trap    #15
+00001BA8  4E72 2000               1195      STOP    #$2000
+00001BAC                          1196      
+00001BAC                          1197  errorNoColorPallets
+00001BAC  700D                    1198      move.l  #13,d0
+00001BAE  43F9 0012EAE0           1199      lea     noColorPallets,a1
+00001BB4  4E4F                    1200      trap    #15
+00001BB6  4E72 2000               1201      STOP    #$2000
+00001BBA                          1202      
+00001BBA                          1203  errorDisplayOutOfBounds
+00001BBA  700D                    1204      move.l  #13,d0
+00001BBC  43F9 0012EB0A           1205      lea     displayOutOfBounds,a1
+00001BC2  4E4F                    1206      trap    #15
+00001BC4  4E72 2000               1207      STOP    #$2000
+00001BC8                          1208  
+00001BC8                          1209  imgBG 
+00001BC8                          1210      incbin "board.bmp"
+0012DC5E                          1211  imgRed
+0012DC5E                          1212      incbin "puckRed.bmp"
+0012E0F4                          1213  imgBlue
+0012E0F4                          1214      incbin "puckBlue.bmp"
+0012E58A                          1215  imgYellow
+0012E58A                          1216      incbin "puckYellow.bmp"
+0012EA20                          1217  
+0012EA20= 54 68 65 20 69 6D ...   1218  offsetNonNegative       dc.b 'The image offset must be non-negative',0
+0012EA46= 54 68 65 20 69 6D ...   1219  offsetTooHigh           dc.b 'The image offset and dimensions go past the bounds of the image',0
+0012EA86= 54 68 65 20 69 6D ...   1220  dimensionsNonNegative   dc.b 'The image dimensions must both be non-negative',0
+0012EAB5= 4F 6E 6C 79 20 33 ...   1221  thirtyTwoBitOnly        dc.b 'Only 32-bit images are currently supported',0
+0012EAE0= 43 6F 6C 6F 72 20 ...   1222  noColorPallets          dc.b 'Color pallets are not currently supported',0
+0012EB0A= 49 6D 61 67 65 20 ...   1223  displayOutOfBounds      dc.b 'Image attempted to render out of display',0
+0012EB33                          1224  
+0012EB34= 0000007E                1225  SEGMENT_0       dc.l $7E
+0012EB38= 00000030                1226  SEGMENT_1       dc.l $30
+0012EB3C= 0000006D                1227  SEGMENT_2       dc.l $6D
+0012EB40= 00000079                1228  SEGMENT_3       dc.l $79
+0012EB44= 00000033                1229  SEGMENT_4       dc.l $33
+0012EB48= 0000005B                1230  SEGMENT_5       dc.l $5B
+0012EB4C= 0000005F                1231  SEGMENT_6       dc.l $5F
+0012EB50= 00000070                1232  SEGMENT_7       dc.l $70
+0012EB54= 0000007F                1233  SEGMENT_8       dc.l $7F
+0012EB58= 0000007B                1234  SEGMENT_9       dc.l $7B
+0012EB5C                          1235      
+0012EB5C                          1236  RANDOMVAL       ds.l    1
+0012EB60                          1237      
+0012EB60                          1238      END START
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ABSFIRSTDONE        11AA
+ABSSECONDDONE       11C4
+ASKIPA              18B0
+ASKIPB              18EE
+ASKIPC              192C
+ASKIPD              195E
+ASKIPE              199C
+ASKIPF              19DA
+ASKIPG              1A00
+BG_COLOR            FFD49900
+CHOOSERED           1800
+CHOOSEYELLOW        180A
+CHOSECOLOR          1810
+CREATEPUCKS         1052
+CREATEPUCKSDONE     10B2
+DELETEPUCKSLOOP     177A
+DELETEPUCKSLOOPEND  17CC
+DIMENSIONSNONNEGATIVE  12EA86
+DISPLAYBITMAP       1A52
+DISPLAYOUTOFBOUNDS  12EB0A
+DISPLAY_HEIGHT      1E0
+DISPLAY_RES_TC      21
+DISPLAY_WIDTH       280
+DONEX               16EE
+DONEY               1718
+DONTSKIPFRICTION    1732
+DOUBLE_BUFFER       11
+DRAWDONE            1B46
+DRAWSCORE           185E
+DRAW_MODE_TC        5C
+DRAW_PIXEL_TC       52
+DRAW_RECT_TC        57
+DVDXNEGATIVE1       1258
+DVDXNEGATIVE1B      1332
+DVDXNEGATIVE2       1278
+DVDXNEGATIVE2B      1352
+DVDXNEGATIVE4       12B6
+DVDXNEGATIVE4B      1390
+DVDXNEGATIVE5       12CE
+DVDXNEGATIVE5B      13A8
+DVDXPOSITIVE1       125E
+DVDXPOSITIVE1B      1338
+DVDXPOSITIVE2       127E
+DVDXPOSITIVE2B      1358
+DVDXPOSITIVE4       12BC
+DVDXPOSITIVE4B      1396
+DVDXPOSITIVE5       12D4
+DVDXPOSITIVE5B      13AE
+ERRORDIMENSIONSNONNEGATIVE  1B90
+ERRORDISPLAYOUTOFBOUNDS  1BBA
+ERRORNOCOLORPALLETS  1BAC
+ERROROFFSETNONNEGATIVE  1B74
+ERROROFFSETTOOHIGH  1B82
+ERRORTHIRTYTWOBITONLY  1B9E
+FILL_COLOR_TC       51
+FLIPENDIAN          1B52
+FLIPENDIANWORD      1B68
+FRICTION            F0
+FRICTION_ZERO       7FFFFF
+GAMELOOP            110C
+GETPUCKPOS          144A
+GETPUCKPOWER        13C8
+GETPUCKPOWERLOOP    13F4
+GETPUCKPOWERLOOPDONE  143E
+GETRANDOMBOOL       1640
+GET_INPUT_TC        13
+GET_TIME_CODE       8
+HASVELOCITY         1752
+IMGBG               1BC8
+IMGBLUE             12E0F4
+IMGRED              12DC5E
+IMGYELLOW           12E58A
+INNERLOOPTHIRTYTWO  1B0A
+MOVEPUCKSLOOP       1120
+NEGATIVEX           16E4
+NEGATIVEY           170E
+NINC0               1656
+NINC1               165E
+NOCOLORPALLETS      12EAE0
+NOVELOCITY          175A
+NUM_PUCKS           6
+OFFSETNONNEGATIVE   12EA20
+OFFSETTOOHIGH       12EA46
+OUTERLOOPTHIRTYTWO  1AF0
+PEN_COLOR_TC        50
+PEN_WIDTH_TC        5D
+PUCKPOSDONTFLIP     149C
+PUCKPOSFLIP         149A
+PUCKPOSLOOP         147E
+PUCK_DATA_SIZE      40
+PUCK_MAX_X          16800
+PUCK_MAX_Y          1CC00
+PUCK_MIN_X          11800
+PUCK_MIN_Y          6400
+PUCK_POS_MS         280
+PUCK_POW_DMS        100
+PUCK_POW_MAX        1800
+PUCK_POW_MIN        800
+PUCK_POW_MS         80
+PUCK_SIZE           10
+PUCK_SIZE_S         10000
+PUCK_START_X        14000
+PUCK_START_Y        1A000
+PUCK_STORE_DY       2000
+PUCK_STORE_X        20000
+RANDOMVAL           12EB5C
+RENDERPUCKS         1770
+RENDERPUCKSLOOP     17D2
+RENDERPUCKSLOOPEND  1852
+REPAINT_TC          5E
+RESETGAME           1042
+RESOLVECOLLISIONS   1168
+RESOLVEINNERLOOP    1184
+RESOLVEOUTERLOOP    116E
+RESOLVEOUTERLOOPDONE  13C6
+RESTOREREGISTERS    1A2A
+SAVEREGISTERS       1A02
+SCORE_A_COLOR       FF
+SCORE_A_LEN         14
+SCORE_A_THICK       4
+SCORE_A_X           E1
+SCORE_A_Y           96
+SCORE_B_COLOR       FF0000
+SCORE_B_LEN         14
+SCORE_B_THICK       4
+SCORE_B_X           19F
+SCORE_B_Y           96
+SEEDRANDOM          1632
+SEGMENT_0           12EB34
+SEGMENT_1           12EB38
+SEGMENT_2           12EB3C
+SEGMENT_3           12EB40
+SEGMENT_4           12EB44
+SEGMENT_5           12EB48
+SEGMENT_6           12EB4C
+SEGMENT_7           12EB50
+SEGMENT_8           12EB54
+SEGMENT_9           12EB58
+SETOLDPOS           167E
+SETOLDPOSLOOP       1684
+SETOLDPOSLOOPEND    16A2
+SINGLE_BUFFER       10
+SKIPFRICTION        1726
+SKIPTHISPIXEL       1B3A
+SPACE_KEY_CODE      20
+START               1000
+THIRTYTWOBITONLY    12EAB5
+THREE_POINT         8C00
+TOP_2_F             FF000000
+TWO_POINT           B400
+UPDATEPUCKS         16A4
+UPDATEPUCKSLOOP     16AA
+UPDATEPUCKSLOOPEND  176E
+UPDATEPUCKSSETNOTACTIVE  1770
+UPDATESCORES        14D6
+UPDATESCORESLOOP    14EC
+UPDATESCORESLOOPDONE  15BE
+UPDATESCORESRED     155C
